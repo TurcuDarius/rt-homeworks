@@ -1,5 +1,6 @@
 package ssatr.device;
-
+import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.BlockingQueue;
 
 /**
@@ -31,22 +32,49 @@ public class PeriodicTelemetryTask implements Runnable {
 
     @Override
     public void run() {
-        // TODO 1: implementați bucla taskului periodic. Fiecare job:
-        //   - citiți temperatura: sensor.read()
-        //   - publicați pe Config.telemetryTopic(deviceId) mesajul "deviceId;timestamp;temperatura"
-        //     (timestamp = System.currentTimeMillis(); temperatura cu punct zecimal,
-        //      de ex. String.format(Locale.US, "%.2f", t), ca să poată fi citită
-        //      cu Double.parseDouble în business-service)
-        //   - dacă temperatura > threshold, puneți valoarea în coada alarmEvents
-        //
-        // Folosiți așteptare absolută, nu relativă: Thread.sleep(periodMs) după
-        // fiecare job duce la derivă (perioada reală devine T + C + întârzieri).
-        // Calculați eliberarea următorului job pe grilă (next = next + periodMs)
-        // și așteptați doar cât a mai rămas până la ea. Pentru grilă folosiți
-        // un timp monoton: System.nanoTime().
-        //
-        // periodMs se poate schimba în timpul rulării (comanda SET_INTERVAL),
-        // deci citiți-l la fiecare job.
+        // Prima eliberare: acum. Restul sunt pe grila r_k = r_0 + k*T (timp monoton).
+        long next = System.nanoTime();
+
+        while (!Thread.currentThread().isInterrupted()) {
+            // ---- JOB ----
+            try {
+                double t = sensor.read();
+                long ts = System.currentTimeMillis();
+
+                String payload = deviceId + ";" + ts + ";" + String.format(Locale.US, "%.2f", t);
+                mqtt.publish(Config.telemetryTopic(deviceId), payload);
+
+                // Taskul periodic doar semnalează; alarma o tratează taskul sporadic.
+                // offer() nu blochează, deci jobul nu depinde de coada alarmelor.
+                if (t > threshold) {
+                    alarmEvents.offer(t);
+                }
+            } catch (Exception e) {
+                // o eroare într-un job (ex. publicare eșuată) nu trebuie să oprească taskul
+                System.err.println("[" + deviceId + "] eroare în jobul periodic: " + e.getMessage());
+            }
+
+            // ---- Așteptare absolută până la următoarea eliberare de pe grilă ----
+            // periodMs se citește la fiecare job, ca SET_INTERVAL să aibă efect imediat.
+            next += TimeUnit.MILLISECONDS.toNanos(periodMs);
+
+            long now = System.nanoTime();
+            long remaining = next - now;
+
+            if (remaining > 0) {
+                try {
+                    TimeUnit.NANOSECONDS.sleep(remaining);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            } else {
+                // Jobul a depășit perioada (overrun). Nu recuperăm eliberările pierdute
+                // în rafală: resincronizăm grila la momentul curent.
+                System.err.println("[" + deviceId + "] overrun: " + (-remaining / 1_000_000) + " ms");
+                next = now;
+            }
+        }
     }
 
     public void setPeriodMs(long periodMs) {
