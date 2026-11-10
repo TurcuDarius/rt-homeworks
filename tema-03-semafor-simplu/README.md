@@ -154,7 +154,7 @@ Taskul sporadic este eliberat de evenimente, nu de ceas: stă blocat în `xQueue
 | faza curentă și momentul intrării în ea | control | control, ieșire |
 | cererea pietonului | sporadic (o setează), control (o șterge) | control, ieșire |
 
-Fără protecție, un task poate citi starea în mijlocul unei modificări făcute de altul. De exemplu, taskul de ieșire poate vedea faza nouă cu momentul de intrare al fazei vechi și calculează o numărătoare greșită. Exemplul [`02_mutex_stare_partajata`](exemple/02_mutex_stare_partajata/02_mutex_stare_partajata.ino) arată cât de des se întâmplă asta. De aceea accesul la stare se face cu un **mutex** (`xSemaphoreCreateMutex`, `xSemaphoreTake`, `xSemaphoreGive`):
+Fără protecție, un task poate citi starea în mijlocul unei modificări făcute de altul. De exemplu, taskul de ieșire poate vedea faza nouă cu momentul de intrare al fazei vechi și calculează o numărătoare greșită. Exemplul [`torn_state`](https://github.com/automatica-cluj/rt-labs-esp32c3/blob/main/lab6-task-patterns/torn_state/torn_state.ino) arată cât de des se întâmplă asta. De aceea accesul la stare se face cu un **mutex** (`xSemaphoreCreateMutex`, `xSemaphoreTake`, `xSemaphoreGive`):
 
 - mutexul se ține **cât mai puțin**: doar citirea sau scrierea câmpurilor. Taskul de ieșire, de exemplu, copiază starea într-o variabilă locală și eliberează mutexul înainte să construiască și să publice mesajul;
 - cât timp țineți mutexul: fără `mqtt_publish()`, fără `Serial`, fără așteptări;
@@ -179,7 +179,7 @@ void IRAM_ATTR button_isr(void) {
 }
 ```
 
-Contactele unui buton nu se închid curat (**bounce**): o singură apăsare produce adesea mai multe întreruperi, la câteva zeci de microsecunde sau câteva milisecunde distanță. Exemplul [`03_isr_coada`](exemple/03_isr_coada/03_isr_coada.ino) le arată. Nu le filtrați în ISR: le respinge taskul sporadic, prin intervalul minim între sosiri. Pentru asta, momentul fiecărei apăsări este pus în elementul cozii de cel care o trimite (ISR-ul sau `command_received()`), nu citit de task când o preia.
+Contactele unui buton nu se închid curat (**bounce**): o singură apăsare produce adesea mai multe întreruperi, la câteva zeci de microsecunde sau câteva milisecunde distanță. Exemplul [`isr_queue`](https://github.com/automatica-cluj/rt-labs-esp32c3/blob/main/lab6-task-patterns/isr_queue/isr_queue.ino) le arată. Nu le filtrați în ISR: le respinge taskul sporadic, prin intervalul minim între sosiri. Pentru asta, momentul fiecărei apăsări este pus în elementul cozii de cel care o trimite (ISR-ul sau `command_received()`), nu citit de task când o preia.
 
 Nu țineți BOOT apăsat când apăsați RST sau conectați cablul: așa porniți bootloaderul, nu schița.
 
@@ -187,7 +187,7 @@ Nu țineți BOOT apăsat când apăsați RST sau conectați cablul: așa porniț
 
 ### `exemple/`
 
-Șase schițe Arduino mici, fiecare cu un singur concept: așteptarea absolută, mutexul, ISR-ul cu coadă, taskul sporadic, taskul aperiodic, automatul cu două taskuri periodice. Exemplul cu taskul aperiodic nu este necesar pentru temă: recapitulează tema 02. Rulează doar cu placa la USB și Serial Monitor, fără Wi-Fi și MQTT. Rulați-le înainte să scrieți taskurile; ce urmăriți în fiecare este descris în [`exemple/README.md`](exemple/README.md).
+Exemplele sunt în [laboratorul 6 din rt-labs-esp32c3](https://github.com/automatica-cluj/rt-labs-esp32c3/tree/main/lab6-task-patterns): șase schițe Arduino mici, fiecare cu un singur concept: așteptarea absolută, mutexul, ISR-ul cu coadă, taskul sporadic, taskul aperiodic, automatul cu două taskuri periodice. Exemplul cu taskul aperiodic nu este necesar pentru temă: recapitulează tema 02. Rulează doar cu placa la USB și Serial Monitor, fără Wi-Fi și MQTT. Rulați-le înainte să scrieți taskurile; ce urmăriți în fiecare și la ce TODO vă ajută este descris în [`exemple/README.md`](exemple/README.md).
 
 ### `start/dashboard/` (gata implementat)
 
@@ -205,6 +205,30 @@ Dashboard-ul:
 - verifică regulile de siguranță și afișează erorile;
 - la **Buton pietoni**, trimite plăcii selectate comanda `BUTTON` și măsoară cât durează până se aprinde lampa AȘTEPTAȚI;
 - afișează mesajele invalide.
+
+### `start/dashboard-web/` (gata implementat, opțional)
+
+Același dashboard, ca pagină web, cu o intersecție mai realistă, văzută de sus. Pe două benzi vin mașini, care opresc la linia de oprire la roșu și la galben (dacă mai pot opri) și formează coloane. Pe trotuare vin pietoni: unii trec doar pe lângă, alții așteaptă la bordură și traversează pe verde. Și aici, simularea doar reacționează la lămpile primite de la placă și nu ia nicio decizie. Ca la dashboard-ul Swing, setați `STUDENT` în `Config.java`, identic cu `config.h`.
+
+```bash
+cd start/dashboard-web
+mvn -q compile exec:java
+```
+
+Pagina se deschide singură; altfel, deschideți `http://127.0.0.1:8080/`. Cele două dashboard-uri pot rula în același timp.
+
+Dashboard-ul web rulează și pe serverul cursului, fără să instalați nimic: [https://control.aut.utcluj.ro/semafor/](https://control.aut.utcluj.ro/semafor/). Pagina vă cere numele, identic cu `STUDENT` din `config.h`, și apoi arată doar plăcile voastre. Puteți păstra adresa cu numele inclus, de exemplu `https://control.aut.utcluj.ro/semafor/?student=popescu-ion`. `Dockerfile` și fișierele `compose*.yml` din folder sunt pentru acest server; pentru temă nu aveți nevoie de ele.
+
+Pe lângă ce face dashboard-ul Swing, pagina web:
+
+- arată coloanele de mașini oprite pe fiecare bandă, câți pietoni așteaptă și cât au așteptat;
+- arată urmările greșelilor plăcii: un verde trecut în roșu fără galben produce **mașini trecute pe roșu** (șoferii nu mai pot opri), iar un verde pentru pietoni cu mașinile pe verde sau pe galben produce **conflicte mașină–pieton** pe zebră;
+- are opțiunea **pietonii apasă singuri butonul**: fiecare pieton care ajunge la bordură trimite `BUTTON`, iar unii apasă din nou, deși lampa AȘTEPTAȚI e deja aprinsă. Așa încercați taskul sporadic cu apăsări venite la momente întâmplătoare;
+- vă lasă să alegeți cât de aglomerat este traficul de mașini și de pietoni.
+
+Cu traficul „aglomerat” și cu pietoni la fiecare ciclu, coloanele de mașini cresc: verdele minim de 10 s nu ajunge pentru toate mașinile. Nu este o greșeală a plăcii.
+
+Dashboard-ul se poate încerca și fără placă, cu mesaje trimise de mână dintr-un client MQTT: vezi [Jucați rolul plăcii](#jucați-rolul-plăcii-mesaje-lights-trimise-de-mână).
 
 ### `start/esp32_semafor/`
 
@@ -256,6 +280,45 @@ Detaliile din tema 02 rămân valabile:
 - stiva fiecărui task are cel puțin 4096 de octeți;
 - `Serial.setTxTimeoutMs(0)` rămâne în `setup()`.
 
+### Jucați rolul plăcii: mesaje `lights` trimise de mână
+
+Înainte să scrieți cod, puteți fi voi „placa”: trimiteți mesaje `lights` dintr-un client MQTT și urmăriți cum reacționează dashboard-ul web. Așa vedeți exact ce așteaptă el și ce face cu fiecare câmp. Dashboard-ul nu verifică de unde vine mesajul: orice client care publică pe topic-ul `lights` al studentului vostru este, pentru el, o placă.
+
+1. Porniți dashboard-ul web (`start/dashboard-web/`, cu `STUDENT` setat) sau deschideți pagina de pe serverul cursului cu numele vostru.
+2. În **MQTTX** creați o conexiune la `control.aut.utcluj.ro`, portul `11188`, fără utilizator și parolă, și abonați-vă la `ssatr/popescu-ion/#` (cu numele vostru în loc de `popescu-ion`).
+3. Publicați, ca *Plaintext* și fără *Retain*, pe topic-ul `ssatr/popescu-ion/devices/manual/lights`:
+
+```
+manual;0;CAR_GREEN;GREEN;RED;0;0
+```
+
+Dashboard-ul adaugă device-ul `manual` în lista **Device** (ID-ul este primul câmp din mesaj, nu numele din topic) și aprinde verde pentru mașini. Timestamp-ul nu este verificat, puteți lăsa `0`. După 2 s fără mesaje, lămpile se sting și pagina scrie „placa nu mai trimite mesaje”: placa reală publică la fiecare 500 ms. În MQTTX, porniți **Timed message** (în meniul de lângă butonul de trimitere) cu 1 s, ca mesajul să se repete singur; când vreți altă fază, schimbați textul și trimiteți din nou. Cu `mosquitto`, același lucru:
+
+```bash
+while true; do mosquitto_pub -h control.aut.utcluj.ro -p 11188 -t 'ssatr/popescu-ion/devices/manual/lights' -m 'manual;0;CAR_GREEN;GREEN;RED;0;0'; sleep 1; done
+```
+
+Un ciclu complet, mesaj cu mesaj:
+
+| Trimiteți | Ce face dashboard-ul |
+|-----------|----------------------|
+| `manual;0;CAR_GREEN;GREEN;RED;0;0` | verde pentru mașini, roșu pentru pietoni; mașinile trec, pietonii se adună la bordură |
+| `manual;0;CAR_GREEN;GREEN;RED;1;0` | lampa AȘTEPTAȚI și butoanele de pe trotuar se aprind; faza rămâne aceeași |
+| `manual;0;CAR_YELLOW;YELLOW;RED;1;0` | galben: mașinile care mai pot frâna opresc la linie, celelalte trec |
+| `manual;0;ALL_RED;RED;RED;1;0` | roșu pentru toți; coloana de mașini crește |
+| `manual;0;PED_GREEN;RED;GREEN;0;8` | pietonii traversează, numărătoarea arată 8; scădeți voi secundele (7, 6, …): când rămân puține, unii pietoni nu mai pornesc |
+| `manual;0;CAR_GREEN;GREEN;RED;0;0` | mașinile pornesc din nou; pietonii rămași pe zebră grăbesc pasul |
+
+Apoi greșiți intenționat, ca să vedeți verificările de siguranță:
+
+| Trimiteți | Ce face dashboard-ul |
+|-----------|----------------------|
+| `manual;0;PED_GREEN;GREEN;GREEN;0;8` | în Jurnal: `EROARE DE SIGURANȚĂ: CONFLICT: pietoni GREEN, mașini GREEN`; pe zebră apar **conflicte mașină–pieton** |
+| `CAR_GREEN` cu `GREEN`, apoi direct `ALL_RED` cu `RED` | `mașini: GREEN → RED fără YELLOW`; mașinile prea aproape de linie nu mai pot opri: **mașini trecute pe roșu** |
+| `manual;0;CAR_GREEN;GREEN;RED;0` (șase câmpuri) | `mesaj lights invalid (are 6 câmpuri în loc de 7)`; lămpile rămân cum erau |
+
+În sens invers, dashboard-ul vă trimite vouă comanda: apăsați **Buton pietoni** (sau bifați **pietonii apasă singuri butonul**) și urmăriți în MQTTX mesajul `BUTTON` sosit pe `ssatr/popescu-ion/devices/manual/commands`. Pagina așteaptă apoi 5 s să vadă `asteptati` = `1` în `lights`. Răspundeți cu al doilea mesaj din primul tabel și pagina scrie „AȘTEPTAȚI aprinsă după … ms”; dacă nu răspundeți, scrie „AȘTEPTAȚI nu s-a aprins în 5 s”. Exact asta va face placa voastră: taskul sporadic înregistrează cererea, iar taskul de ieșire o publică la jobul următor.
+
 ## Cerințe
 
 ### 1. Placa ESP32 (`start/esp32_semafor/`)
@@ -281,7 +344,7 @@ Cu dashboard-ul pornit:
 
 Nu scrieți tot codul deodată. Fiecare pas de mai jos se poate verifica separat:
 
-1. **Conexiunea.** Setați `STUDENT` în `config.h` și în `Config.java`, încărcați scheletul neschimbat și porniți dashboard-ul. Placa nu apare încă în lista **Device**, pentru că nu publică nimic. Verificați totuși în Serial Monitor că placa s-a conectat la broker.
+1. **Conexiunea.** Setați `STUDENT` în `config.h` și în `Config.java`, încărcați scheletul neschimbat și porniți dashboard-ul. Placa nu apare încă în lista **Device**, pentru că nu publică nimic. Verificați totuși în Serial Monitor că placa s-a conectat la broker. Înainte de orice cod, [jucați rolul plăcii](#jucați-rolul-plăcii-mesaje-lights-trimise-de-mână) din MQTTX, ca să vedeți ce așteaptă dashboard-ul de la fiecare mesaj.
 2. **Starea și ieșirea (TODO 0 parțial, TODO 2).** Definiți starea și mutexul, apoi scrieți doar taskul de ieșire. Placa apare în dashboard cu lămpile fazei inițiale. Schimbați temporar faza inițială (de exemplu `ALL_RED` sau `PED_GREEN`) și verificați că lămpile se văd corect.
 3. **Controlul (TODO 1).** Adăugați taskul de control. Ca să-l încercați înainte de buton, porniți temporar cu cererea pietonului setată: după verdele minim de 10 s trebuie să vedeți un ciclu complet, cu duratele din tabel, apoi semaforul rămâne pe `CAR_GREEN`. Pe Serial apare fiecare schimbare de fază.
 4. **Butonul (TODO 3).** ISR-ul, coada butonului și taskul sporadic. Încercați BOOT și **Buton pietoni**, rar și des.
@@ -294,7 +357,8 @@ Soluția se află în fork-ul vostru, în folderul `tema-03-semafor-simplu/`:
 tema-03-semafor-simplu/
 └── start/
     ├── esp32_semafor/        # schița completată
-    └── dashboard/            # doar STUDENT setat în Config.java
+    ├── dashboard/            # doar STUDENT setat în Config.java
+    └── dashboard-web/        # doar STUDENT setat în Config.java, dacă l-ați folosit
 ```
 
 **Nu urcați în fork parola rețelei voastre Wi-Fi.** Înainte de commit, puneți înapoi în `config.h` valorile pentru `iot-demo`.
@@ -304,6 +368,6 @@ După push, adăugați commit ID-ul soluției (`git rev-parse HEAD`) ca **coment
 ## Bibliografie
 
 - Cursul: [2.3 Eliberare periodică](https://control.aut.utcluj.ro:8030/part-02-time/03-periodic-release/), [3.2 Modelul de task](https://control.aut.utcluj.ro:8030/part-03-scheduling/02-task-model/)
-- [rt-labs-esp32c3](https://github.com/automatica-cluj/rt-labs-esp32c3): laboratorul 0 (`two_tasks`), `docs/freertos_concepts.md`
+- [rt-labs-esp32c3](https://github.com/automatica-cluj/rt-labs-esp32c3): laboratorul 6 (`lab6-task-patterns`), laboratorul 0 (`two_tasks`), `docs/freertos_concepts.md`
 - [FreeRTOS: mutex](https://www.freertos.org/Documentation/02-Kernel/02-Kernel-features/02-Queues-mutexes-and-semaphores/04-Mutexes), [`xQueueSendFromISR`](https://www.freertos.org/Documentation/02-Kernel/04-API-references/06-Queues/04-xQueueSendFromISR), [`xTaskDelayUntil`](https://www.freertos.org/Documentation/02-Kernel/04-API-references/02-Task-control/03-xTaskDelayUntil)
 - [Arduino-ESP32: GPIO și întreruperi](https://docs.espressif.com/projects/arduino-esp32/en/latest/api/gpio.html)
